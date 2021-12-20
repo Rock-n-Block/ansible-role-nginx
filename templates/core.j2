@@ -1,0 +1,78 @@
+{% macro nginx(server_name, config) %}
+server {
+    server_name {{ server_name }};
+    client_max_body_size  50m;
+
+    access_log  /var/log/nginx/{{ server_name }}.access.log;
+    error_log   /var/log/nginx/{{ server_name }}.error.log;
+
+{% if config.frontend_path_remote is defined %}
+    root {{ config.frontend_path_remote }};
+{% endif %}
+
+{% for location, params in config.locations.items() %}
+{% if params.proxy_port is defined or params.try_files is defined or params.alias is defined %}
+    location {{ location }} {
+{% if params.allow_cors is defined %}
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '*';
+            add_header 'Access-Control-Allow-Methods' 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS';
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Pragma,access-control-allow-credentials,access-control-allow-origin';
+            add_header 'Access-Control-Max-Age' 86400;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+
+        if ($request_method ~* "(GET|POST|PUT|PATCH|DELETE|HEAD)") {
+            add_header "Access-Control-Allow-Origin" '*';
+            add_header 'Access-Control-Allow-Methods' 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS';
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Pragma,access-control-allow-credentials,access-control-allow-origin';
+            add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range';
+        }
+
+{% endif %}
+{% if params.proxy_port is defined %}
+        proxy_pass http://127.0.0.1:{{ params.proxy_port }};
+        proxy_set_header Host $server_name;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        keepalive_timeout 650;
+{% endif %}
+{% if params.try_files is defined %}
+        try_files $uri $uri/ /;
+        index index.html;
+{% endif %}
+{% if params.alias is defined %}
+        autoindex on;
+        alias {{ params.alias }};
+        index index.html;
+{% endif %}
+    }
+{% endif %}   
+{% endfor %}
+
+    listen {{ config.nginx_port }}{{ ' ssl' if config.nginx_port == 443}};
+
+{% if config.nginx_port == 443 %} 
+{% if config.letsencrypt_ssl is defined and config.letsencrypt_ssl is boolean and config.letsencrypt_ssl | bool %}
+    ssl_certificate /etc/letsencrypt/live/{{ server_name }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ server_name }}/privkey.pem;
+{% else %}
+    ssl_certificate {{ config.ssl_certificate }};
+    ssl_certificate_key {{ config.ssl_certificate_key }};
+{% endif %}
+{% endif %}
+}
+
+{% if config.http_redirect is defined and config.http_redirect is boolean and config.http_redirect | bool %}
+server {
+    if ($host = {{ server_name }}) {
+        return 301 https://$host$request_uri;
+    }
+
+    server_name {{ server_name }};
+    listen 80;
+    return 404;
+}
+{%- endif %}
+{% endmacro %}
