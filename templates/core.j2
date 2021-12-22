@@ -6,12 +6,12 @@ server {
     access_log  /var/log/nginx/{{ server_name }}.access.log;
     error_log   /var/log/nginx/{{ server_name }}.error.log;
 
-{% if config.frontend_path_remote is defined %}
-    root {{ config.frontend_path_remote }};
+{% if config.root_path is defined %}
+    root {{ config.root_path }};
 {% endif %}
 
 {% for location, params in config.locations.items() %}
-{% if params.proxy_port is defined or params.try_files is defined or params.alias is defined %}
+{% if params.proxy_port is defined or (params.try_files is defined and config.root_path is defined) or params.alias is defined %}
     location {{ location }} {
 {% if params.allow_cors is defined %}
         if ($request_method = 'OPTIONS') {
@@ -51,9 +51,9 @@ server {
 {% endif %}   
 {% endfor %}
 
-    listen {{ config.nginx_port }}{{ ' ssl' if config.nginx_port == 443}};
+    listen {{ config.port }}{{ ' ssl' if config.port == 443}};
 
-{% if config.nginx_port == 443 %} 
+{% if config.port == 443 %} 
 {% if config.letsencrypt_ssl is defined and config.letsencrypt_ssl is boolean and config.letsencrypt_ssl | bool %}
     ssl_certificate /etc/letsencrypt/live/{{ server_name }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ server_name }}/privkey.pem;
